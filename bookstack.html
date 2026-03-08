@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bookstack</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0e0c;
+    --surface: #1a1814;
+    --border: #2e2b25;
+    --text: #e8e0d0;
+    --muted: #6b6355;
+    --accent: #c9a96e;
+    --accent2: #7c9e8f;
+    --danger: #c96e6e;
+    --aged: #c97b3a;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.6;
+  }
+
+  #app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---- VIEWS ---- */
+  .view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  #main-view   { transform: translateX(0); }
+  #archive-view { transform: translateX(100%); }
+  #main-view.slide-out    { transform: translateX(-30%); }
+  #archive-view.slide-in  { transform: translateX(0); }
+
+  /* ---- HEADER ---- */
+  .page-header {
+    padding: 20px 32px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .page-header-left { display: flex; align-items: baseline; gap: 16px; }
+  .page-header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px; font-weight: 400;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+  }
+  #archive-view .page-header h1 { color: var(--accent2); }
+  .page-header .sub { color: var(--muted); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* ---- TOOLBAR ---- */
+  .toolbar {
+    padding: 8px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 10px; align-items: center;
+    flex-shrink: 0;
+  }
+
+  /* ---- BUTTONS ---- */
+  button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; padding: 5px 12px;
+    cursor: pointer; letter-spacing: 0.08em;
+    text-transform: uppercase; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  button.primary:hover { background: var(--accent); color: var(--bg); }
+  button.back { border-color: var(--accent2); color: var(--accent2); }
+  button.back:hover { background: var(--accent2); color: var(--bg); border-color: var(--accent2); }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+  /* ---- BOARD: bottom-anchored columns ---- */
+  .board {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;   /* anchor to bottom */
+    gap: 0;
+    padding: 0 32px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    min-height: 0;
+  }
+
+  /* ---- COLUMN ---- */
+  .column {
+    width: 220px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    padding: 0 20px 0 0;
+    margin-right: 20px;
+    height: 100%;            /* full height so header is at top, stack at bottom */
+  }
+  .column:last-of-type { border-right: none; }
+
+  .col-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .col-title {
+    font-family: 'Playfair Display', serif;
+    font-style: italic; font-size: 15px;
+    color: var(--text); cursor: pointer;
+    outline: none; background: none; border: none;
+    width: 100%; padding: 0; user-select: text;
+  }
+  .col-title:focus { border-bottom: 1px solid var(--accent); color: var(--accent); }
+
+  .col-del { border: none !important; padding: 2px 6px; font-size: 14px; color: var(--muted); flex-shrink: 0; }
+  .col-del:hover { color: var(--danger) !important; border: none !important; }
+
+  /* spacer pushes stack to bottom */
+  .col-spacer { flex: 1; }
+
+  /* ---- STACK ---- */
+  .stack {
+    display: flex;
+    flex-direction: column;   /* top of pile = first child = visually on top */
+    gap: 4px;
+    padding-bottom: 24px;
+    flex-shrink: 0;
+  }
+
+  .stack.drag-over { outline: 1px dashed var(--accent2); outline-offset: 4px; }
+
+  /* ---- BLOCK ---- */
+  .block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    cursor: grab;
+    transition: border-color 0.15s, opacity 0.15s, transform 0.2s;
+    position: relative;
+  }
+  .block:hover { border-color: var(--accent); }
+  .block.dragging { opacity: 0.25; }
+  .block.drop-above { border-top: 2px solid var(--accent2); }
+  .block.drop-below { border-bottom: 2px solid var(--accent2); }
+  .block.priority-high { border-left: 3px solid var(--accent); }
+  .block.priority-aged  { border-left: 3px solid var(--aged); }
+
+  /* bottom block = last child */
+  .block:last-child { border-bottom-width: 2px; border-bottom-color: var(--border); }
+  .block:last-child.priority-high { border-bottom-color: var(--accent); }
+  .block:last-child.priority-aged  { border-bottom-color: var(--aged); }
+
+  .block-title { font-size: 12px; color: var(--text); line-height: 1.4; margin-bottom: 4px; pointer-events: none; }
+  .block-meta  { display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+  .block-age   { font-size: 10px; color: var(--muted); }
+  .block-age.aged { color: var(--aged); }
+  .block-dot   { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .block-dot.high { background: var(--accent); }
+  .block-dot.aged { background: var(--aged); }
+  .next-tag { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent2); margin-bottom: 2px; }
+
+  .empty-col {
+    font-size: 10px; color: var(--muted); letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 12px 0; text-align: center;
+    border: 1px dashed var(--border); margin-bottom: 24px;
+  }
+
+  .add-col-btn {
+    width: 160px; flex-shrink: 0; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px dashed var(--border); color: var(--muted);
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.15s;
+    align-self: flex-end; margin-bottom: 24px;
+    background: none;
+  }
+  .add-col-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---- DRAG GHOST ---- */
+  #drag-ghost {
+    position: fixed; pointer-events: none; z-index: 1000;
+    width: 200px; background: var(--surface);
+    border: 1px solid var(--accent); padding: 10px 12px;
+    font-size: 12px; color: var(--text); opacity: 0.95;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    transform: rotate(-1.5deg); display: none;
+    font-family: 'DM Mono', monospace;
+  }
+  #drag-ghost.outside { border-color: var(--accent2); }
+  #drag-ghost.outside::after {
+    content: '→ archive'; display: block; font-size: 9px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent2); margin-top: 4px;
+  }
+
+  /* ---- ARCHIVE VIEW ---- */
+  .archive-board {
+    flex: 1; display: flex; align-items: flex-start;
+    gap: 0; padding: 24px 32px 40px;
+    overflow-x: auto; overflow-y: auto;
+  }
+  .archive-col { width: 220px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 0 20px 20px 0; margin-right: 20px; }
+  .archive-col:last-child { border-right: none; }
+  .archive-col-title {
+    font-family: 'Playfair Display', serif; font-style: italic; font-size: 15px;
+    color: var(--muted); padding-bottom: 10px; margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .archive-block {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 10px 12px; margin-bottom: 4px; opacity: 0.65;
+  }
+  .archive-block strong { font-size: 12px; color: var(--text); display: block; margin-bottom: 3px; font-weight: 400; }
+  .archive-block-meta { font-size: 10px; color: var(--muted); }
+  .archive-empty { font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; padding: 12px 0; text-align: center; border: 1px dashed var(--border); }
+
+  /* ---- MODAL ---- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+    display: flex; align-items: center; justify-content: center; z-index: 200;
+  }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    width: 420px; max-width: 95vw; max-height: 85vh;
+    overflow-y: auto; padding: 28px;
+    animation: slideUp 0.18s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal h2 { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 400; margin-bottom: 20px; color: var(--accent); }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .field input, .field textarea, .field select {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-family: 'DM Mono', monospace; font-size: 12px;
+    padding: 8px 10px; outline: none; transition: border-color 0.15s; resize: vertical; user-select: text;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--accent); }
+  .field select option { background: var(--surface); }
+  .modal-actions { display: flex; gap: 8px; margin-top: 24px; justify-content: flex-end; }
+  .modal-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0 16px; }
+  .archive-btn { width: 100%; border-color: var(--accent2); color: var(--accent2); padding: 8px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .archive-btn:hover { background: var(--accent2); color: var(--bg); border-color: var(--accent2); }
+  .delete-btn { width: 100%; margin-top: 6px; padding: 8px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .aging-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+  .aging-row input[type="checkbox"] { accent-color: var(--accent); }
+  .aging-row label { display: inline; text-transform: none; font-size: 11px; margin: 0; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- MAIN VIEW -->
+  <div class="view" id="main-view">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Bookstack</h1>
+        <span class="sub">visual reading tracker</span>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="primary" onclick="openAddModal()">+ add book</button>
+      <button onclick="openArchive()">archive</button>
+      <button onclick="addColumn()">+ column</button>
+    </div>
+    <div class="board" id="main-board"></div>
+  </div>
+
+  <!-- ARCHIVE VIEW -->
+  <div class="view" id="archive-view">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Archive</h1>
+        <span class="sub">completed reads</span>
+      </div>
+      <button class="back" onclick="closeArchive()">← back</button>
+    </div>
+    <div class="archive-board" id="archive-board"></div>
+  </div>
+
+</div>
+
+<div id="drag-ghost"></div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" style="display:none" onclick="onModalBg(event)">
+  <div class="modal">
+    <h2 id="modal-title">Add Book</h2>
+    <div class="field"><label>Title</label><input id="f-title" type="text" placeholder="Book title..."></div>
+    <div class="field"><label>Author</label><input id="f-author" type="text" placeholder="Author..."></div>
+    <div class="field"><label>Column</label><select id="f-column"></select></div>
+    <div class="field"><label>Est. reading time</label><input id="f-time" type="text" placeholder="e.g. 8 hours, 3 weeks..."></div>
+    <div class="field"><label>Notes</label><textarea id="f-notes" rows="3" placeholder="Why read this? Notes..."></textarea></div>
+    <div class="field"><label>Priority</label>
+      <select id="f-priority">
+        <option value="normal">Normal</option>
+        <option value="high">High (pinned)</option>
+      </select>
+    </div>
+    <div class="field aging-row">
+      <input type="checkbox" id="f-aging" checked>
+      <label for="f-aging">Auto-age priority (gains urgency over time)</label>
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeModal()">cancel</button>
+      <button class="primary" onclick="saveBlock()">save</button>
+    </div>
+    <div id="modal-edit-actions" style="display:none">
+      <hr class="modal-divider">
+      <button class="archive-btn" onclick="archiveEditing()">mark as done + archive</button>
+      <button class="delete-btn danger" onclick="deleteEditing()">delete this book</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- STATE ----
+let S = { columns: [], blocks: [], archive: [] };
+let editingId = null;
+
+const DEFAULT_COLS = [
+  { id: 'c1', title: 'Human Systems' },
+  { id: 'c2', title: 'Formal Systems' },
+  { id: 'c3', title: 'Brain & Life' },
+  { id: 'c4', title: 'Philosophy & Fiction' }
+];
+
+function persist() { localStorage.setItem('bookstack_v3', JSON.stringify(S)); }
+function hydrate() {
+  const raw = localStorage.getItem('bookstack_v3');
+  if (raw) S = JSON.parse(raw);
+  else S.columns = DEFAULT_COLS.map(c => ({ ...c }));
+}
+
+function uid() { return Math.random().toString(36).slice(2, 9); }
+function daysSince(d) { return Math.floor((Date.now() - new Date(d).getTime()) / 86400000); }
+function isAged(b) { return b.aging !== false && daysSince(b.createdAt) >= 14; }
+function priClass(b) { return b.priority === 'high' ? 'priority-high' : isAged(b) ? 'priority-aged' : ''; }
+function dotClass(b) { return b.priority === 'high' ? 'high' : isAged(b) ? 'aged' : ''; }
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// sorted: index 0 = TOP of pile (newest / highest priority), last index = BOTTOM (next up)
+function sorted(blocks) {
+  return [...blocks].sort((a, b) => {
+    const pa = a.priority === 'high' ? 2 : isAged(a) ? 1 : 0;
+    const pb = b.priority === 'high' ? 2 : isAged(b) ? 1 : 0;
+    if (pa !== pb) return pb - pa;
+    if (a.order != null && b.order != null) return a.order - b.order;
+    // newer books on top (lower index = top of pile)
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
+}
+
+// ---- RENDER MAIN ----
+function renderMain() {
+  const board = document.getElementById('main-board');
+  board.innerHTML = '';
+
+  S.columns.forEach(col => {
+    const blocks = sorted(S.blocks.filter(b => b.columnId === col.id));
+    const colEl = document.createElement('div');
+    colEl.className = 'column';
+
+    // blocks: index 0 = top of pile, last = bottom (next up)
+    const stackRows = blocks.map((b, i) => {
+      const days = daysSince(b.createdAt);
+      const aged = isAged(b);
+      const isBottom = i === blocks.length - 1;
+      return `<div class="block ${priClass(b)}" data-id="${b.id}">
+        ${isBottom ? '<div class="next-tag">next up</div>' : ''}
+        <div class="block-title">${esc(b.title)}</div>
+        <div class="block-meta">
+          <span class="block-age ${aged ? 'aged' : ''}">${days}d${b.time ? ' · ' + esc(b.time) : ''}</span>
+          <span class="block-dot ${dotClass(b)}"></span>
+        </div>
+      </div>`;
+    }).join('');
+
+    const emptyEl = blocks.length === 0 ? '<div class="empty-col">empty</div>' : '';
+
+    colEl.innerHTML = `
+      <div class="col-header">
+        <input class="col-title" value="${esc(col.title)}" data-col="${col.id}" />
+        <button class="col-del" data-delcol="${col.id}">✕</button>
+      </div>
+      <div class="col-spacer"></div>
+      <div class="stack" id="stack-${col.id}">${stackRows}</div>
+      ${emptyEl}
+      <button class="add-inline" data-addcol="${col.id}"
+        style="width:100%;margin-bottom:24px;font-size:10px;padding:5px;">+ add</button>
+    `;
+    board.appendChild(colEl);
+  });
+
+  const btn = document.createElement('button');
+  btn.className = 'add-col-btn';
+  btn.textContent = '+ column';
+  btn.onclick = addColumn;
+  board.appendChild(btn);
+
+  // events
+  board.querySelectorAll('.col-title').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const c = S.columns.find(c => c.id === inp.dataset.col);
+      if (c) { c.title = inp.value; persist(); }
+    });
+  });
+  board.querySelectorAll('[data-delcol]').forEach(b => {
+    b.addEventListener('click', () => deleteColumn(b.dataset.delcol));
+  });
+  board.querySelectorAll('[data-addcol]').forEach(b => {
+    b.addEventListener('click', () => openAddModal(b.dataset.addcol));
+  });
+  board.querySelectorAll('.block').forEach(el => {
+    el.addEventListener('mousedown', e => { e.preventDefault(); dragStart(e, el.dataset.id); });
+    el.addEventListener('touchstart', e => dragStart(e, el.dataset.id), { passive: true });
+  });
+}
+
+// ---- RENDER ARCHIVE ----
+function renderArchive() {
+  const board = document.getElementById('archive-board');
+  board.innerHTML = '';
+  S.columns.forEach(col => {
+    const items = S.archive.filter(b => b.columnId === col.id).slice().reverse();
+    const colEl = document.createElement('div');
+    colEl.className = 'archive-col';
+    const rows = items.length === 0
+      ? '<div class="archive-empty">nothing yet</div>'
+      : items.map(b => `
+          <div class="archive-block">
+            <strong>${esc(b.title)}</strong>
+            <div class="archive-block-meta">${b.author ? esc(b.author) + ' · ' : ''}${new Date(b.archivedAt).toLocaleDateString()}</div>
+          </div>`).join('');
+    colEl.innerHTML = `<div class="archive-col-title">${esc(col.title)}</div>${rows}`;
+    board.appendChild(colEl);
+  });
+}
+
+// ---- NAVIGATION ----
+function openArchive() {
+  renderArchive();
+  document.getElementById('main-view').classList.add('slide-out');
+  document.getElementById('archive-view').classList.add('slide-in');
+}
+function closeArchive() {
+  document.getElementById('main-view').classList.remove('slide-out');
+  document.getElementById('archive-view').classList.remove('slide-in');
+}
+
+// ---- ARCHIVE BLOCK ----
+function archiveBlock(id) {
+  const b = S.blocks.find(b => b.id === id);
+  if (!b) return;
+  S.archive.push({ ...b, archivedAt: new Date().toISOString() });
+  S.blocks = S.blocks.filter(x => x.id !== id);
+  persist(); renderMain();
+}
+
+// ---- DRAG ----
+let dragId = null, dragMoved = false, dragX0 = 0, dragY0 = 0;
+const ghost = document.getElementById('drag-ghost');
+const THRESH = 5;
+
+function isOverBoard(cx, cy) {
+  for (const col of document.querySelectorAll('#main-board .column')) {
+    const r = col.getBoundingClientRect();
+    if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) return true;
+  }
+  return false;
+}
+
+function getDropTarget(cx, cy) {
+  for (const col of document.querySelectorAll('#main-board .column')) {
+    const r = col.getBoundingClientRect();
+    if (cx < r.left || cx > r.right) continue;
+    const colId = col.querySelector('.stack')?.id?.replace('stack-', '');
+    if (!colId) continue;
+    const blocks = col.querySelectorAll('.block:not(.dragging)');
+    for (const blk of blocks) {
+      const br = blk.getBoundingClientRect();
+      if (cy <= br.bottom) {
+        const mid = br.top + br.height / 2;
+        return { colId, refId: blk.dataset.id, pos: cy < mid ? 'above' : 'below' };
+      }
+    }
+    return { colId, refId: null, pos: 'bottom' };
+  }
+  return null;
+}
+
+function clearIndicators() {
+  document.querySelectorAll('.drop-above,.drop-below').forEach(el => el.classList.remove('drop-above','drop-below'));
+}
+
+function dragStart(e, id) {
+  dragId = id; dragMoved = false;
+  dragX0 = e.clientX ?? e.touches?.[0]?.clientX;
+  dragY0 = e.clientY ?? e.touches?.[0]?.clientY;
+  const b = S.blocks.find(b => b.id === id);
+  ghost.textContent = b?.title || '';
+  ghost.classList.remove('outside');
+  document.addEventListener('mousemove', dragMove);
+  document.addEventListener('mouseup', dragEnd);
+  document.addEventListener('touchmove', dragMove, { passive: false });
+  document.addEventListener('touchend', dragEnd);
+}
+
+function dragMove(e) {
+  if (!dragId) return;
+  if (e.cancelable) e.preventDefault();
+  const cx = e.clientX ?? e.touches?.[0]?.clientX;
+  const cy = e.clientY ?? e.touches?.[0]?.clientY;
+  if (!dragMoved) {
+    if (Math.hypot(cx - dragX0, cy - dragY0) < THRESH) return;
+    dragMoved = true;
+    ghost.style.display = 'block';
+    document.querySelector(`.block[data-id="${dragId}"]`)?.classList.add('dragging');
+  }
+  ghost.style.left = (cx + 14) + 'px';
+  ghost.style.top  = (cy - 20) + 'px';
+  const outside = !isOverBoard(cx, cy);
+  ghost.classList.toggle('outside', outside);
+  clearIndicators();
+  if (!outside) {
+    const t = getDropTarget(cx, cy);
+    if (t?.refId) {
+      document.querySelector(`.block[data-id="${t.refId}"]`)
+        ?.classList.add(t.pos === 'above' ? 'drop-above' : 'drop-below');
+    }
+  }
+}
+
+function dragEnd(e) {
+  if (!dragId) return;
+  const cx = e.clientX ?? e.changedTouches?.[0]?.clientX;
+  const cy = e.clientY ?? e.changedTouches?.[0]?.clientY;
+  document.removeEventListener('mousemove', dragMove);
+  document.removeEventListener('mouseup', dragEnd);
+  document.removeEventListener('touchmove', dragMove);
+  document.removeEventListener('touchend', dragEnd);
+  ghost.style.display = 'none';
+  ghost.classList.remove('outside');
+  clearIndicators();
+  document.querySelector(`.block[data-id="${dragId}"]`)?.classList.remove('dragging');
+
+  if (!dragMoved) { openEditModal(dragId); dragId = null; return; }
+
+  if (!isOverBoard(cx, cy)) {
+    archiveBlock(dragId);
+  } else {
+    const t = getDropTarget(cx, cy);
+    if (t) reorder(dragId, t.colId, t.refId, t.pos);
+  }
+  dragId = null;
+}
+
+function reorder(blockId, colId, refId, pos) {
+  const block = S.blocks.find(b => b.id === blockId);
+  if (!block) return;
+  block.columnId = colId;
+  const rest = sorted(S.blocks.filter(b => b.columnId === colId && b.id !== blockId));
+  let idx = rest.length; // default: bottom
+  if (refId) {
+    const ri = rest.findIndex(b => b.id === refId);
+    idx = pos === 'above' ? ri : ri + 1;
+  }
+  rest.splice(idx, 0, block);
+  rest.forEach((b, i) => { b.order = i; });
+  persist(); renderMain();
+}
+
+// ---- COLUMNS ----
+function addColumn() {
+  S.columns.push({ id: uid(), title: 'New Column' });
+  persist(); renderMain();
+}
+function deleteColumn(id) {
+  if (S.blocks.some(b => b.columnId === id) && !confirm('Column has books. Delete anyway?')) return;
+  S.columns = S.columns.filter(c => c.id !== id);
+  S.blocks  = S.blocks.filter(b => b.columnId !== id);
+  persist(); renderMain();
+}
+
+// ---- MODAL ----
+function openAddModal(colId) {
+  editingId = null;
+  document.getElementById('modal-title').textContent = 'Add Book';
+  ['f-title','f-author','f-time','f-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-priority').value = 'normal';
+  document.getElementById('f-aging').checked = true;
+  document.getElementById('modal-edit-actions').style.display = 'none';
+  fillColSelect(colId || S.columns[0]?.id);
+  document.getElementById('modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('f-title').focus(), 50);
+}
+
+function openEditModal(id) {
+  const b = S.blocks.find(b => b.id === id);
+  if (!b) return;
+  editingId = id;
+  document.getElementById('modal-title').textContent = b.title;
+  document.getElementById('f-title').value   = b.title;
+  document.getElementById('f-author').value  = b.author || '';
+  document.getElementById('f-time').value    = b.time || '';
+  document.getElementById('f-notes').value   = b.notes || '';
+  document.getElementById('f-priority').value = b.priority || 'normal';
+  document.getElementById('f-aging').checked  = b.aging !== false;
+  document.getElementById('modal-edit-actions').style.display = 'block';
+  fillColSelect(b.columnId);
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function fillColSelect(selectedId) {
+  document.getElementById('f-column').innerHTML =
+    S.columns.map(c => `<option value="${c.id}"${c.id === selectedId ? ' selected' : ''}>${esc(c.title)}</option>`).join('');
+}
+
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+  editingId = null;
+}
+function onModalBg(e) { if (e.target.id === 'modal') closeModal(); }
+
+function saveBlock() {
+  const title = document.getElementById('f-title').value.trim();
+  if (!title) { alert('Title required'); return; }
+  if (editingId) {
+    const b = S.blocks.find(b => b.id === editingId);
+    Object.assign(b, {
+      title,
+      author: document.getElementById('f-author').value.trim(),
+      time:   document.getElementById('f-time').value.trim(),
+      notes:  document.getElementById('f-notes').value.trim(),
+      priority: document.getElementById('f-priority').value,
+      aging:    document.getElementById('f-aging').checked,
+      columnId: document.getElementById('f-column').value
+    });
+  } else {
+    S.blocks.push({
+      id: uid(), title,
+      author:   document.getElementById('f-author').value.trim(),
+      time:     document.getElementById('f-time').value.trim(),
+      notes:    document.getElementById('f-notes').value.trim(),
+      priority: document.getElementById('f-priority').value,
+      aging:    document.getElementById('f-aging').checked,
+      columnId: document.getElementById('f-column').value,
+      createdAt: new Date().toISOString()
+    });
+  }
+  persist(); renderMain(); closeModal();
+}
+
+function archiveEditing() {
+  if (!editingId) return;
+  archiveBlock(editingId);
+  closeModal();
+}
+function deleteEditing() {
+  if (!editingId || !confirm('Delete permanently?')) return;
+  S.blocks = S.blocks.filter(b => b.id !== editingId);
+  persist(); renderMain(); closeModal();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeModal(); closeArchive(); }
+});
+
+hydrate();
+renderMain();
+</script>
+</body>
+</html>
