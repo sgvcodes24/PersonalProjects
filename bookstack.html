@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bookstack</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0e0c;
+    --surface: #1a1814;
+    --border: #2e2b25;
+    --text: #e8e0d0;
+    --muted: #6b6355;
+    --accent: #c9a96e;
+    --accent2: #7c9e8f;
+    --danger: #c96e6e;
+    --aged: #c97b3a;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: auto;
+  }
+
+  /* grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.6;
+  }
+
+  header {
+    padding: 28px 32px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+  }
+
+  header span {
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .toolbar {
+    padding: 12px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    padding: 5px 12px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  button.primary:hover { background: var(--accent); color: var(--bg); }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+  .board {
+    display: flex;
+    gap: 0;
+    padding: 24px 32px;
+    min-height: calc(100vh - 120px);
+    align-items: flex-start;
+  }
+
+  .column {
+    width: 220px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    padding: 0 20px 20px 0;
+    margin-right: 20px;
+    position: relative;
+  }
+
+  .column:last-of-type {
+    border-right: none;
+  }
+
+  .col-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .col-title {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--text);
+    cursor: pointer;
+    outline: none;
+    background: none;
+    border: none;
+    width: 100%;
+  }
+
+  .col-title:focus {
+    border-bottom: 1px solid var(--accent);
+    color: var(--accent);
+  }
+
+  .col-actions { display: flex; gap: 6px; }
+
+  .col-actions button {
+    border: none;
+    padding: 2px 6px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  .col-actions button:hover { color: var(--text); border: none; }
+
+  .stack {
+    display: flex;
+    flex-direction: column-reverse; /* bottom = index 0, visually at bottom */
+    gap: 4px;
+    min-height: 40px;
+  }
+
+  .block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+    animation: slideIn 0.2s ease;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .block:hover { border-color: var(--accent); }
+
+  .block.priority-high { border-left: 3px solid var(--accent); }
+  .block.priority-aged { border-left: 3px solid var(--aged); }
+
+  .block-title {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.4;
+    margin-bottom: 4px;
+  }
+
+  .block-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .block-age {
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .block-age.aged { color: var(--aged); }
+
+  .block-priority-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+
+  .block-priority-dot.high { background: var(--accent); }
+  .block-priority-dot.aged { background: var(--aged); }
+
+  .bottom-tag {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent2);
+    margin-bottom: 2px;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    animation: fadeIn 0.15s ease;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    width: 420px;
+    max-width: 95vw;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 28px;
+    animation: slideUp 0.2s ease;
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  .modal h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 400;
+    margin-bottom: 20px;
+    color: var(--accent);
+  }
+
+  .field { margin-bottom: 16px; }
+
+  .field label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .field input, .field textarea, .field select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+    resize: vertical;
+  }
+
+  .field input:focus, .field textarea:focus, .field select:focus {
+    border-color: var(--accent);
+  }
+
+  .field select option { background: var(--surface); }
+
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 24px;
+    justify-content: flex-end;
+  }
+
+  .archive-btn {
+    width: 100%;
+    margin-top: 8px;
+    border-color: var(--accent2);
+    color: var(--accent2);
+    padding: 8px;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .archive-btn:hover { background: var(--accent2); color: var(--bg); border-color: var(--accent2); }
+
+  .add-col-btn {
+    width: 180px;
+    flex-shrink: 0;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s;
+    align-self: flex-start;
+    margin-top: 2px;
+    background: none;
+  }
+
+  .add-col-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .archive-panel {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    width: 300px;
+    max-height: 60vh;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+    transform: translateY(100%);
+    transition: transform 0.25s ease;
+    z-index: 50;
+  }
+
+  .archive-panel.open { transform: translateY(0); }
+
+  .archive-panel h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 14px;
+    font-style: italic;
+    color: var(--accent2);
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .archive-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .archive-item strong { color: var(--text); display: block; margin-bottom: 2px; }
+
+  .archive-toggle {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 51;
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+
+  .empty-stack {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 12px 0;
+    text-align: center;
+    border: 1px dashed var(--border);
+  }
+
+  .aging-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .aging-toggle input[type="checkbox"] { accent-color: var(--accent); }
+
+  .priority-badge {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    padding: 2px 5px;
+    border: 1px solid;
+    text-transform: uppercase;
+  }
+
+  .priority-badge.manual { border-color: var(--accent); color: var(--accent); }
+  .priority-badge.aged { border-color: var(--aged); color: var(--aged); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Bookstack</h1>
+  <span>visual reading tracker</span>
+</header>
+
+<div class="toolbar">
+  <button class="primary" onclick="openAddBlock()">+ add book</button>
+  <button onclick="toggleArchive()">archive</button>
+  <button onclick="addColumn()">+ column</button>
+</div>
+
+<div class="board" id="board"></div>
+
+<button class="archive-toggle" onclick="toggleArchive()">archive ↑</button>
+
+<div class="archive-panel" id="archivePanel">
+  <h3>
+    <span>Archive</span>
+    <span style="cursor:pointer;font-size:12px;" onclick="toggleArchive()">close</span>
+  </h3>
+  <div id="archiveList"></div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="modalOverlay" style="display:none" onclick="closeModalOnBg(event)">
+  <div class="modal">
+    <h2 id="modalTitle">Add Book</h2>
+    <div class="field">
+      <label>Title</label>
+      <input id="fTitle" type="text" placeholder="Book title...">
+    </div>
+    <div class="field">
+      <label>Author</label>
+      <input id="fAuthor" type="text" placeholder="Author...">
+    </div>
+    <div class="field">
+      <label>Column</label>
+      <select id="fColumn"></select>
+    </div>
+    <div class="field">
+      <label>Est. reading time</label>
+      <input id="fTime" type="text" placeholder="e.g. 8 hours, 3 weeks...">
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="fNotes" rows="3" placeholder="Why read this? Notes..."></textarea>
+    </div>
+    <div class="field">
+      <label>Priority</label>
+      <select id="fPriority">
+        <option value="normal">Normal</option>
+        <option value="high">High (pinned)</option>
+      </select>
+    </div>
+    <div class="field aging-toggle">
+      <input type="checkbox" id="fAging" checked>
+      <label for="fAging" style="display:inline;text-transform:none;font-size:11px;">Auto-age priority (gains urgency over time)</label>
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeModal()">cancel</button>
+      <button class="primary" onclick="saveBlock()">save</button>
+    </div>
+    <div id="archiveAction" style="display:none">
+      <button class="archive-btn" onclick="archiveBottom()">mark bottom of stack as done + archive</button>
+      <button class="danger" style="width:100%;margin-top:6px;padding:8px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;" onclick="deleteBlock()">delete this book</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// State
+let state = {
+  columns: [
+    { id: 'c1', title: 'To Read' },
+    { id: 'c2', title: 'Reading' },
+    { id: 'c3', title: 'On Hold' },
+    { id: 'c4', title: 'Reference' }
+  ],
+  blocks: [],
+  archive: []
+};
+
+let editingId = null;
+
+function save() {
+  localStorage.setItem('bookstack', JSON.stringify(state));
+}
+
+function load() {
+  const d = localStorage.getItem('bookstack');
+  if (d) state = JSON.parse(d);
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 9);
+}
+
+function daysSince(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  return Math.floor(diff / 86400000);
+}
+
+function isAged(block) {
+  if (!block.aging) return false;
+  return daysSince(block.createdAt) >= 14;
+}
+
+function getPriorityClass(block) {
+  if (block.priority === 'high') return 'priority-high';
+  if (isAged(block)) return 'priority-aged';
+  return '';
+}
+
+function getDotClass(block) {
+  if (block.priority === 'high') return 'high';
+  if (isAged(block)) return 'aged';
+  return '';
+}
+
+function sortBlocks(blocks) {
+  // priority: high first, then aged, then normal; within each group, oldest first (bottom of visual stack)
+  return [...blocks].sort((a, b) => {
+    const ap = a.priority === 'high' ? 2 : isAged(a) ? 1 : 0;
+    const bp = b.priority === 'high' ? 2 : isAged(b) ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    return new Date(a.createdAt) - new Date(b.createdAt);
+  });
+}
+
+function render() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+
+  state.columns.forEach(col => {
+    const blocks = sortBlocks(state.blocks.filter(b => b.columnId === col.id));
+
+    const colEl = document.createElement('div');
+    colEl.className = 'column';
+    colEl.innerHTML = `
+      <div class="col-header">
+        <input class="col-title" value="${col.title}" onchange="renameCol('${col.id}', this.value)" />
+        <div class="col-actions">
+          <button title="Delete column" onclick="deleteColumn('${col.id}')">✕</button>
+        </div>
+      </div>
+      <div class="stack" id="stack-${col.id}">
+        ${blocks.length === 0 ? '<div class="empty-stack">empty</div>' : ''}
+        ${blocks.map((b, i) => {
+          const days = daysSince(b.createdAt);
+          const aged = isAged(b);
+          const isBottom = i === 0;
+          return `
+            <div class="block ${getPriorityClass(b)}" onclick="openBlock('${b.id}')">
+              ${isBottom ? '<div class="bottom-tag">next up</div>' : ''}
+              <div class="block-title">${b.title}</div>
+              <div class="block-meta">
+                <span class="block-age ${aged ? 'aged' : ''}">${days}d${b.time ? ' · ' + b.time : ''}</span>
+                <span class="block-priority-dot ${getDotClass(b)}"></span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <button style="width:100%;margin-top:10px;font-size:10px;padding:5px;" onclick="openAddBlock('${col.id}')">+ add</button>
+    `;
+    board.appendChild(colEl);
+  });
+
+  // add column button
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-col-btn';
+  addBtn.textContent = '+ column';
+  addBtn.onclick = addColumn;
+  board.appendChild(addBtn);
+
+  renderArchive();
+}
+
+function renderArchive() {
+  const list = document.getElementById('archiveList');
+  if (state.archive.length === 0) {
+    list.innerHTML = '<div class="archive-item" style="color:var(--muted)">Nothing archived yet.</div>';
+    return;
+  }
+  list.innerHTML = state.archive.slice().reverse().map(b => `
+    <div class="archive-item">
+      <strong>${b.title}</strong>
+      ${b.author ? b.author + ' · ' : ''}done ${new Date(b.archivedAt).toLocaleDateString()}
+    </div>
+  `).join('');
+}
+
+// Column ops
+function addColumn() {
+  state.columns.push({ id: uid(), title: 'New Column' });
+  save(); render();
+}
+
+function renameCol(id, val) {
+  const c = state.columns.find(c => c.id === id);
+  if (c) c.title = val;
+  save();
+}
+
+function deleteColumn(id) {
+  const hasBlocks = state.blocks.some(b => b.columnId === id);
+  if (hasBlocks && !confirm('This column has books in it. Delete anyway?')) return;
+  state.columns = state.columns.filter(c => c.id !== id);
+  state.blocks = state.blocks.filter(b => b.columnId !== id);
+  save(); render();
+}
+
+// Modal
+function openAddBlock(colId) {
+  editingId = null;
+  document.getElementById('modalTitle').textContent = 'Add Book';
+  document.getElementById('fTitle').value = '';
+  document.getElementById('fAuthor').value = '';
+  document.getElementById('fTime').value = '';
+  document.getElementById('fNotes').value = '';
+  document.getElementById('fPriority').value = 'normal';
+  document.getElementById('fAging').checked = true;
+  document.getElementById('archiveAction').style.display = 'none';
+  populateColSelect(colId || state.columns[0]?.id);
+  document.getElementById('modalOverlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('fTitle').focus(), 50);
+}
+
+function openBlock(id) {
+  const b = state.blocks.find(b => b.id === id);
+  if (!b) return;
+  editingId = id;
+  document.getElementById('modalTitle').textContent = b.title;
+  document.getElementById('fTitle').value = b.title;
+  document.getElementById('fAuthor').value = b.author || '';
+  document.getElementById('fTime').value = b.time || '';
+  document.getElementById('fNotes').value = b.notes || '';
+  document.getElementById('fPriority').value = b.priority || 'normal';
+  document.getElementById('fAging').checked = b.aging !== false;
+  document.getElementById('archiveAction').style.display = 'block';
+  populateColSelect(b.columnId);
+  document.getElementById('modalOverlay').style.display = 'flex';
+}
+
+function populateColSelect(selectedId) {
+  const sel = document.getElementById('fColumn');
+  sel.innerHTML = state.columns.map(c =>
+    `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${c.title}</option>`
+  ).join('');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').style.display = 'none';
+  editingId = null;
+}
+
+function closeModalOnBg(e) {
+  if (e.target.id === 'modalOverlay') closeModal();
+}
+
+function saveBlock() {
+  const title = document.getElementById('fTitle').value.trim();
+  if (!title) { alert('Title required'); return; }
+
+  if (editingId) {
+    const b = state.blocks.find(b => b.id === editingId);
+    b.title = title;
+    b.author = document.getElementById('fAuthor').value.trim();
+    b.time = document.getElementById('fTime').value.trim();
+    b.notes = document.getElementById('fNotes').value.trim();
+    b.priority = document.getElementById('fPriority').value;
+    b.aging = document.getElementById('fAging').checked;
+    b.columnId = document.getElementById('fColumn').value;
+  } else {
+    state.blocks.push({
+      id: uid(),
+      title,
+      author: document.getElementById('fAuthor').value.trim(),
+      time: document.getElementById('fTime').value.trim(),
+      notes: document.getElementById('fNotes').value.trim(),
+      priority: document.getElementById('fPriority').value,
+      aging: document.getElementById('fAging').checked,
+      columnId: document.getElementById('fColumn').value,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  save(); render(); closeModal();
+}
+
+function archiveBottom() {
+  // archive the lowest priority block in that column (oldest, normal priority)
+  const colId = document.getElementById('fColumn').value;
+  const blocks = sortBlocks(state.blocks.filter(b => b.columnId === colId));
+  if (blocks.length === 0) return;
+  const bottom = blocks[0]; // index 0 = bottom of visual stack = next up
+  bottom.archivedAt = new Date().toISOString();
+  state.archive.push(bottom);
+  state.blocks = state.blocks.filter(b => b.id !== bottom.id);
+  save(); render(); closeModal();
+}
+
+function deleteBlock() {
+  if (!editingId) return;
+  if (!confirm('Delete this book permanently?')) return;
+  state.blocks = state.blocks.filter(b => b.id !== editingId);
+  save(); render(); closeModal();
+}
+
+function toggleArchive() {
+  document.getElementById('archivePanel').classList.toggle('open');
+}
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+
+load();
+render();
+</script>
+</body>
+</html>
